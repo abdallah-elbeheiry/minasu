@@ -3,7 +3,7 @@ COLLECTION := -collection:aqwabor=aqwabor
 .PHONY: dev build test bench demo-window demo-flappy clean
 
 dev:
-	odin run aqwabor/examples/windowdemo $(COLLECTION)
+	odin run aqwabor/examples/flappybird $(COLLECTION)
 
 demo-window:
 	odin run aqwabor/examples/windowdemo $(COLLECTION)
