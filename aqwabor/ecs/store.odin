@@ -14,13 +14,14 @@ NO_ROW :: i32(-1)
 
 @(private)
 Store :: struct($T: typeid) {
-	cid:        Component_ID,
-	world:      ^World,
-	allocator:  runtime.Allocator,
-	dense:      [dynamic]T,
-	owners:     [dynamic]Entity,
-	sparse:     [dynamic]i32,
-	awake:      int,
+	cid:          Component_ID,
+	world:        ^World,
+	allocator:    runtime.Allocator,
+	destroy_elem: proc(data: ^T, allocator: runtime.Allocator), // optional per-element destructor
+	dense:        [dynamic]T,
+	owners:       [dynamic]Entity,
+	sparse:       [dynamic]i32,
+	awake:        int,
 }
 
 @(private)
@@ -33,10 +34,11 @@ Any_Store :: struct {
 }
 
 @(private)
-store_init :: proc(s: ^Store($T), w: ^World, cid: Component_ID, allocator := context.allocator) {
+store_init :: proc(s: ^Store($T), w: ^World, cid: Component_ID, allocator := context.allocator, destroy_cb: proc(data: ^T, allocator: runtime.Allocator) = nil) {
 	s.cid = cid
 	s.world = w
 	s.allocator = allocator
+	s.destroy_elem = destroy_cb
 	s.dense = make([dynamic]T, 0, 64, allocator)
 	s.owners = make([dynamic]Entity, 0, 64, allocator)
 	s.sparse = make([dynamic]i32, 0, 64, allocator)
@@ -45,6 +47,11 @@ store_init :: proc(s: ^Store($T), w: ^World, cid: Component_ID, allocator := con
 
 @(private)
 store_destroy :: proc(s: ^Store($T)) {
+	if s.destroy_elem != nil {
+		for i in 0 ..< len(s.dense) {
+			s.destroy_elem(&s.dense[i], s.allocator)
+		}
+	}
 	delete(s.dense)
 	delete(s.owners)
 	delete(s.sparse)
@@ -87,6 +94,9 @@ store_grow_sparse :: proc(s: ^Store($T), idx: int) {
 @(private)
 store_set :: proc(s: ^Store($T), e: Entity, v: T) {
 	if r := store_row(s, e); r != NO_ROW {
+		if s.destroy_elem != nil {
+			s.destroy_elem(&s.dense[r], s.allocator)
+		}
 		s.dense[r] = v
 		return
 	}
@@ -130,6 +140,10 @@ store_remove :: proc(s: ^Store($T), e: Entity) -> bool {
 	}
 	last := i32(len(s.dense) - 1)
 	store_swap(s, r, last)
+	// Destroy the removed element's heap data before dropping the row.
+	if s.destroy_elem != nil {
+		s.destroy_elem(&s.dense[last], s.allocator)
+	}
 	s.sparse[index(s.owners[last])] = NO_ROW
 	pop(&s.dense)
 	pop(&s.owners)
@@ -166,6 +180,11 @@ store_is_awake :: proc(s: ^Store($T), e: Entity) -> bool {
 
 @(private)
 store_reset :: proc(s: ^Store($T)) {
+	if s.destroy_elem != nil {
+		for i in 0 ..< len(s.dense) {
+			s.destroy_elem(&s.dense[i], s.allocator)
+		}
+	}
 	clear(&s.dense)
 	clear(&s.owners)
 	for i in 0 ..< len(s.sparse) {

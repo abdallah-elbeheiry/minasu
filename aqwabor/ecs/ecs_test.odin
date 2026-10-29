@@ -1,7 +1,11 @@
+#+feature dynamic-literals
+
 package ecs
 
 import "core:math/rand"
 import "core:mem"
+import "base:runtime"
+import "core:strings"
 import "core:testing"
 import "aqwabor:logx"
 
@@ -416,4 +420,86 @@ test_destroy_cancels_timer :: proc(t: ^testing.T) {
 	timers_after(tm, e, 3)
 	destroy(w, e)
 	testing.expect_value(t, timers_pending(tm), 0)
+}
+
+@(test)
+test_pointer_slice_string_component_allowed :: proc(t: ^testing.T) {
+	// Use the heap allocator (supports individual free) for both the world and
+	// component data, so the destroy callback can free without leaks.
+	w := new_world(context.allocator)
+	defer destroy_world(w)
+
+	// A component holding a string, a dynamic array, and a pointer field.
+	// Strings and dynamic arrays are heap-allocated and freed by the destroy
+	// callback; the pointer field is nil here but demonstrates that ^T fields
+	// are now allowed in components (previously rejected).
+	Blob :: struct {
+		name: string,
+		nums: [dynamic]int,
+		ptr:  ^int,
+	}
+
+	blob_destroy := proc(b: ^Blob, allocator: runtime.Allocator) {
+		delete(b.name, context.allocator)
+	}
+	blob := must_register(w, Blob, destroy_cb = blob_destroy)
+
+	e := create(w)
+	set(blob, e, Blob{
+		name = strings.clone("hello", context.allocator),
+		nums = [dynamic]int{1, 2, 3},
+		ptr = nil,
+	})
+	testing.expect_value(t, comp_len(blob), 1)
+
+	// Removal frees the component's heap data exactly once (no leak).
+	testing.expect(t, remove(blob, e))
+	testing.expect_value(t, comp_len(blob), 0)
+
+	// Re-adding and destroying the entity frees again.
+	e2 := create(w)
+	set(blob, e2, Blob{
+		name = strings.clone("world", context.allocator),
+		nums = [dynamic]int{4, 5},
+		ptr = nil,
+	})
+	testing.expect(t, destroy(w, e2))
+	testing.expect_value(t, comp_len(blob), 0)
+
+	// reset clears all stores; no elements remain, so nothing to free.
+	reset(w)
+	testing.expect_value(t, comp_len(blob), 0)
+
+	// Overwriting an existing component destroys the old value first.
+	e3 := create(w)
+	set(blob, e3, Blob{
+		name = strings.clone("first", context.allocator),
+		nums = [dynamic]int{1},
+		ptr = nil,
+	})
+	set(blob, e3, Blob{
+		name = strings.clone("second", context.allocator),
+		nums = [dynamic]int{2},
+		ptr = nil,
+	})
+	testing.expect_value(t, comp_len(blob), 1)
+	testing.expect(t, destroy(w, e3))
+	testing.expect_value(t, comp_len(blob), 0)
+}
+
+@(test)
+test_pointer_slice_string_destroy_cb_on_store_destroy :: proc(t: ^testing.T) {
+	w := new_world(context.allocator)
+
+	Blob :: struct { name: string }
+
+	blob_destroy := proc(b: ^Blob, allocator: runtime.Allocator) {
+		delete(b.name, context.allocator)
+	}
+	blob := must_register(w, Blob, destroy_cb = blob_destroy)
+
+	e := create(w)
+	set(blob, e, Blob{name = strings.clone("x", context.allocator)})
+	testing.expect_value(t, comp_len(blob), 1)
+	destroy_world(w) // no defer, so this runs now; the destroy callback frees the string
 }
