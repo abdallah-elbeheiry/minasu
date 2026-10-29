@@ -12,7 +12,13 @@ main :: proc() {
 		arena: mem.Dynamic_Arena
 		mem.dynamic_arena_init(&arena)
 		defer mem.dynamic_arena_destroy(&arena)
-		alloc := mem.dynamic_arena_allocator(&arena)
+		backing := mem.dynamic_arena_allocator(&arena)
+
+		ta: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&ta, backing)
+		defer mem.tracking_allocator_destroy(&ta)
+		alloc := mem.tracking_allocator(&ta)
+
 		w := ecs.new_world(alloc)
 		Pos :: struct { x, y: f64 }
 		pos := ecs.must_register(w, Pos)
@@ -42,6 +48,8 @@ main :: proc() {
 		fmt.printf("ECS create+wake %d: %v\n", n, create_dur)
 		fmt.printf("ECS iterate %d: %v\n", n, iter_dur)
 		fmt.printf("ECS reset: %v\n", reset_dur)
+		fmt.printf("ECS memory: allocated=%d freed=%d peak=%d allocs=%d leaks=%d\n",
+			ta.total_memory_allocated, ta.total_memory_freed, ta.peak_memory_allocated, ta.total_allocation_count, len(ta.allocation_map))
 	}
 
 	// Scheduler benchmark
@@ -49,7 +57,13 @@ main :: proc() {
 		arena: mem.Dynamic_Arena
 		mem.dynamic_arena_init(&arena)
 		defer mem.dynamic_arena_destroy(&arena)
-		alloc := mem.dynamic_arena_allocator(&arena)
+		backing := mem.dynamic_arena_allocator(&arena)
+
+		ta: mem.Tracking_Allocator
+		mem.tracking_allocator_init(&ta, backing)
+		defer mem.tracking_allocator_destroy(&ta)
+		alloc := mem.tracking_allocator(&ta)
+
 		s := schedulers.new_schedule(alloc)
 		for i in 0 ..< 8 {
 			schedulers.add(s, "sys", schedulers.reads(), proc(st: schedulers.Tick_State) {})
@@ -68,5 +82,7 @@ main :: proc() {
 
 		fmt.printf("Scheduler run 8 systems: %v\n", run_dur)
 		fmt.printf("Scheduler run x100: %v\n", run100_dur)
+		fmt.printf("Scheduler memory: allocated=%d freed=%d peak=%d allocs=%d leaks=%d\n",
+			ta.total_memory_allocated, ta.total_memory_freed, ta.peak_memory_allocated, ta.total_allocation_count, len(ta.allocation_map))
 	}
 }
