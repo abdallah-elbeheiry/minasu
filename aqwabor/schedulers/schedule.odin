@@ -1,6 +1,7 @@
 package schedulers
 
 import "core:fmt"
+import "core:mem"
 import "core:sync"
 import "core:thread"
 import "core:time"
@@ -120,21 +121,26 @@ Sys_Entry :: struct {
 DEFAULT_PARALLEL_FLOOR :: 50 * time.Microsecond
 
 Schedule :: struct {
-	mu:       sync.Mutex,
-	systems:  [dynamic]^Sys_Entry,
-	stages:   [dynamic][dynamic]^Sys_Entry,
-	built:    bool,
-	floor:    time.Duration,
-	barrier:  proc(),
-	parallel: bool,
+	mu:        sync.Mutex,
+	systems:   [dynamic]^Sys_Entry,
+	stages:    [dynamic][dynamic]^Sys_Entry,
+	built:     bool,
+	floor:     time.Duration,
+	barrier:   proc(),
+	parallel:  bool,
+	allocator: mem.Allocator,
+	pool:      thread.Pool,
 }
 
 new_schedule :: proc(allocator := context.allocator) -> ^Schedule {
 	s := new(Schedule, allocator)
 	s.floor = DEFAULT_PARALLEL_FLOOR
 	s.parallel = true
+	s.allocator = allocator
 	s.systems = make([dynamic]^Sys_Entry, 0, 8, allocator)
 	s.stages = make([dynamic][dynamic]^Sys_Entry, 0, 4, allocator)
+	thread.pool_init(&s.pool, allocator, 4)
+	thread.pool_start(&s.pool)
 	return s
 }
 
@@ -236,7 +242,7 @@ run_schedule :: proc(s: ^Schedule, state: Tick_State) {
 	sync.mutex_unlock(&s.mu)
 
 	for stage in s.stages {
-		run_stage(stage[:], state, floor, parallel)
+		run_stage(stage[:], state, floor, parallel, &s.pool, s.allocator)
 		if barrier != nil {
 			barrier()
 		}
@@ -244,7 +250,7 @@ run_schedule :: proc(s: ^Schedule, state: Tick_State) {
 }
 
 @(private)
-run_stage :: proc(stage: []^Sys_Entry, state: Tick_State, floor: time.Duration, parallel: bool) {
+run_stage :: proc(stage: []^Sys_Entry, state: Tick_State, floor: time.Duration, parallel: bool, pool: ^thread.Pool, allocator: mem.Allocator) {
 	if len(stage) == 0 {
 		return
 	}
@@ -268,16 +274,18 @@ run_stage :: proc(stage: []^Sys_Entry, state: Tick_State, floor: time.Duration, 
 	sync.wait_group_add(&wg, len(stage))
 	for sys in stage {
 		sys := sys
-		Range :: struct { sys: ^Sys_Entry, state: Tick_State, wg: ^sync.Wait_Group }
-		r := new(Range)
+		Range :: struct { sys: ^Sys_Entry, state: Tick_State, wg: ^sync.Wait_Group, alloc: mem.Allocator }
+		r := new(Range, allocator)
 		r.sys = sys
 		r.state = state
 		r.wg = &wg
-		thread.create_and_start_with_poly_data(r, proc(r: ^Range) {
+		r.alloc = allocator
+		thread.pool_add_task(pool, allocator, proc(task: thread.Task) {
+			r := cast(^Range)task.data
 			run_system(r.sys, r.state)
 			sync.wait_group_done(r.wg)
-			free(r)
-		})
+			free(r, r.alloc)
+		}, r)
 	}
 	sync.wait_group_wait(&wg)
 }
@@ -309,35 +317,21 @@ conflicts :: proc(s: ^Schedule, allocator := context.allocator) -> []string {
 	return out[:]
 }
 
-parallel_for :: proc(count: int, fn: proc(i: int)) {
-	n := 4
-	if count < n { n = count }
-	if n < 1 { n = 1 }
-	chunk := max(count / n, 1)
-	wg: sync.Wait_Group
-	for i in 0 ..< n {
-		start := i * chunk
-		end := start + chunk
-		if i == n - 1 {
-			end = count
-		}
-		if start >= end {
-			continue
-		}
-		sync.wait_group_add(&wg, 1)
-		Range :: struct { start, end: int, fn: proc(i: int), wg: ^sync.Wait_Group }
-		r := new(Range)
-		r.start = start
-		r.end = end
-		r.fn = fn
-		r.wg = &wg
-		thread.create_and_start_with_poly_data(r, proc(r: ^Range) {
-			for j in r.start ..< r.end {
-				r.fn(j)
-			}
-			sync.wait_group_done(r.wg)
-			free(r)
-		})
+destroy_schedule :: proc(s: ^Schedule) {
+	if s == nil {
+		return
 	}
-	sync.wait_group_wait(&wg)
+	thread.pool_join(&s.pool)
+	thread.pool_destroy(&s.pool)
+	for stage in s.stages {
+		delete(stage)
+	}
+	delete(s.stages)
+	for sys in s.systems {
+		delete(sys.access.reads)
+		delete(sys.access.writes)
+		free(sys, s.allocator)
+	}
+	delete(s.systems)
+	free(s, s.allocator)
 }

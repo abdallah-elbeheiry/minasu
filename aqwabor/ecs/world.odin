@@ -108,7 +108,7 @@ reset :: proc(w: ^World) {
 		set_clear(set)
 	}
 	entity_allocator_destroy(&w.entities)
-	entity_allocator_init(&w.entities)
+	entity_allocator_init(&w.entities, w.allocator)
 	command_buffer_clear(&w.cmd)
 	timers_reset(&w.timers)
 }

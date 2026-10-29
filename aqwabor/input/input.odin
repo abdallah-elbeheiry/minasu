@@ -221,6 +221,7 @@ record :: proc(m: ^Manager, t: ActionEventType, active: bool, dx: f64, dy: f64) 
 	if m.backend != nil {
 		backend_proc := m.backend
 		events := backend_proc()
+		defer delete(events)
 		for ev in events {
 			applyEvent(m, ev)
 			eventCount += 1

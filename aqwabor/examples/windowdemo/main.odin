@@ -37,7 +37,7 @@ main :: proc() {
 	g_win = win
 
 	g_texture = image.load_texture(win, "resources/new pfp.png")
-	if g_texture == nil {
+	if g_texture.handle == nil {
 		logx.errorf("image: failed to load")
 		return
 	}

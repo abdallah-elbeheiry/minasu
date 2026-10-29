@@ -2,7 +2,7 @@ package window
 
 import "core:c"
 import "core:mem"
-import "core:sync"
+import "core:strings"
 import "aqwabor:logx"
 import "aqwabor:input"
 import SDL "vendor:sdl3"
@@ -15,12 +15,17 @@ WindowConfig :: struct {
 }
 
 window_data :: struct {
-	window:     ^SDL.Window,
-	renderer:   ^SDL.Renderer,
-	cfg:        WindowConfig,
-	mu:         sync.Mutex,
-	last_scale: f32,
-	inputQueue: [dynamic]input.Event,
+	window:          ^SDL.Window,
+	gpu_device:      ^SDL.GPUDevice,
+	cfg:             WindowConfig,
+	last_scale:      f32,
+	inputQueue:      [dynamic]input.Event,
+	allocator:       mem.Allocator,
+	log:             ^logx.Logger,
+	current_cmd:     ^SDL.GPUCommandBuffer,
+	current_swap:    ^SDL.GPUTexture,
+	swap_w:          int,
+	swap_h:          int,
 }
 
 Window :: ^window_data
@@ -28,21 +33,23 @@ Window :: ^window_data
 // PollInput drains and returns the input events collected since the last call.
 PollInput :: proc(w: Window) -> [dynamic]input.Event {
 	q := w.inputQueue
-	w.inputQueue = nil
+	alloc := w.allocator
+	if alloc == (mem.Allocator{}) {
+		alloc = context.allocator
+	}
+	w.inputQueue = make([dynamic]input.Event, 0, 16, alloc)
 	return q
 }
 
 g_log: ^logx.Logger
 g_allocator: mem.Allocator
-g_arena: mem.Dynamic_Arena
 
-init :: proc() {
-	mem.dynamic_arena_init(&g_arena)
-	g_allocator = mem.dynamic_arena_allocator(&g_arena)
-	g_log = logx.with(g_allocator)
+init :: proc(allocator := context.allocator) {
+	g_allocator = allocator
+	g_log = logx.with(allocator)
 }
 
-NewWindow :: proc(cfg: WindowConfig) -> (Window, string) {
+NewWindow :: proc(cfg: WindowConfig, allocator := context.allocator) -> (Window, string) {
 	_cfg := cfg
 	if _cfg.W <= 0 || _cfg.H <= 0 {
 		logx.logger_warn(g_log, "invalid size, falling back to default", "w", _cfg.W, "h", _cfg.H)
@@ -52,8 +59,15 @@ NewWindow :: proc(cfg: WindowConfig) -> (Window, string) {
 	if _cfg.Title == "" {
 		_cfg.Title = "AqwaborEngine"
 	}
+	if g_allocator == (mem.Allocator{}) {
+		g_allocator = allocator
+	}
+	if g_log == nil {
+		g_log = logx.with(g_allocator)
+	}
 	if SDL.Init(SDL.INIT_VIDEO) {
-		title := cstring_from_string(_cfg.Title)
+		title := strings.clone_to_cstring(_cfg.Title, allocator)
+		defer delete(title, allocator)
 		w := SDL.CreateWindow(title, c.int(_cfg.W), c.int(_cfg.H), SDL.WindowFlags{})
 		if w == nil {
 			return nil, "failed to create window"
@@ -67,11 +81,23 @@ NewWindow :: proc(cfg: WindowConfig) -> (Window, string) {
 		SDL.RestoreWindow(w)
 		SDL.SyncWindow(w)
 		logx.logger_info(g_log, "window created", "title", _cfg.Title, "w", _cfg.W, "h", _cfg.H, "resizable", _cfg.Resizable, "onDemand", _cfg.OnDemand)
-		out := new(window_data)
+		out := new(window_data, allocator)
 		out.window = w
 		out.cfg = _cfg
 		out.last_scale = 0
-		out.renderer = SDL.CreateRenderer(w, nil)
+		out.allocator = allocator
+		out.log = g_log
+		out.gpu_device = SDL.CreateGPUDevice({.SPIRV}, false, nil)
+		if out.gpu_device == nil {
+			SDL.DestroyWindow(w)
+			return nil, "failed to create gpu device"
+		}
+		if !SDL.ClaimWindowForGPUDevice(out.gpu_device, w) {
+			SDL.DestroyGPUDevice(out.gpu_device)
+			SDL.DestroyWindow(w)
+			return nil, "failed to claim window for gpu device"
+		}
+		out.inputQueue = make([dynamic]input.Event, 0, 16, allocator)
 		return out, ""
 	}
 	return nil, "failed to init SDL video"
@@ -100,7 +126,7 @@ OnResize :: proc(w: Window, fn: proc(width, height: int)) {
 }
 
 Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64), onKey: proc(key: string) = nil, onKeyUp: proc(key: string) = nil) -> string {
-	if w.window == nil {
+	if w.window == nil || w.gpu_device == nil {
 		return ""
 	}
 	running := true
@@ -140,24 +166,41 @@ Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64), onKey: proc(key:
 		if onUpdate != nil {
 			onUpdate(dt)
 		}
-		if w.renderer != nil {
-			SDL.SetRenderDrawColor(w.renderer, 20, 24, 36, 255)
-			SDL.RenderClear(w.renderer)
+		cmd := SDL.AcquireGPUCommandBuffer(w.gpu_device)
+		w.current_cmd = cmd
+		w.current_swap = nil
+		sw: ^SDL.GPUTexture
+		sw_w, sw_h: SDL.Uint32
+		if SDL.AcquireGPUSwapchainTexture(cmd, w.window, &sw, &sw_w, &sw_h) {
+			w.current_swap = sw
+			w.swap_w = int(sw_w)
+			w.swap_h = int(sw_h)
+			if sw != nil {
+				color_info := SDL.GPUColorTargetInfo{
+					texture = sw,
+					load_op = SDL.GPULoadOp.CLEAR,
+					store_op = SDL.GPUStoreOp.STORE,
+					clear_color = SDL.FColor{0.1, 0.1, 0.15, 1.0},
+				}
+				pass := SDL.BeginGPURenderPass(cmd, &color_info, 1, nil)
+				SDL.EndGPURenderPass(pass)
+			}
 		}
 		if onDraw != nil {
 			onDraw()
 		}
-		if w.renderer != nil {
-			SDL.RenderPresent(w.renderer)
-		}
+		_ = SDL.SubmitGPUCommandBuffer(cmd)
+		w.current_cmd = nil
+		w.current_swap = nil
 	}
+	SDL.ReleaseWindowFromGPUDevice(w.gpu_device, w.window)
+	SDL.DestroyGPUDevice(w.gpu_device)
+	w.gpu_device = nil
 	SDL.Quit()
 	return ""
 }
 
 watch_scale :: proc(w: Window, scale: f32) {
-	sync.mutex_lock(&w.mu)
-	defer sync.mutex_unlock(&w.mu)
 	if w.last_scale == 0 {
 		w.last_scale = scale
 		return
@@ -173,38 +216,42 @@ RequestRedraw :: proc(w: Window) {
 	_ = w
 }
 
-cstring_from_string :: proc(s: string) -> cstring {
-	if len(s) == 0 {
-		return nil
-	}
-	buf := make([]u8, len(s) + 1)
-	for i in 0 ..< len(s) {
-		buf[i] = s[i]
-	}
-	buf[len(s)] = 0
-	return cast(cstring) &buf[0]
+GPUDevice :: proc(w: Window) -> ^SDL.GPUDevice {
+	if w == nil { return nil }
+	return w.gpu_device
 }
 
-Renderer :: proc(w: Window) -> rawptr {
-	if w == nil {
-		return nil
-	}
-	return rawptr(w.renderer)
+CurrentCommandBuffer :: proc(w: Window) -> ^SDL.GPUCommandBuffer {
+	if w == nil { return nil }
+	return w.current_cmd
+}
+
+CurrentSwapchainTexture :: proc(w: Window) -> ^SDL.GPUTexture {
+	if w == nil { return nil }
+	return w.current_swap
+}
+
+SwapchainSize :: proc(w: Window) -> (int, int) {
+	if w == nil { return 0, 0 }
+	return w.swap_w, w.swap_h
 }
 
 Close :: proc(w: Window) {
-	if w == nil || w.window == nil {
-		if w != nil && w.renderer != nil {
-			SDL.DestroyRenderer(w.renderer)
-			w.renderer = nil
-		}
+	if w == nil {
 		return
 	}
-	if w.renderer != nil {
-		SDL.DestroyRenderer(w.renderer)
-		w.renderer = nil
+	if w.window != nil {
+		if w.gpu_device != nil {
+			SDL.ReleaseWindowFromGPUDevice(w.gpu_device, w.window)
+		}
+		logx.logger_debug(g_log, "window closed")
+		SDL.DestroyWindow(w.window)
+		w.window = nil
 	}
-	logx.logger_debug(g_log, "window closed")
-	SDL.DestroyWindow(w.window)
-	w.window = nil
+	if w.gpu_device != nil {
+		SDL.DestroyGPUDevice(w.gpu_device)
+		w.gpu_device = nil
+	}
+	alloc := w.allocator
+	free(w, alloc)
 }

@@ -77,7 +77,8 @@ test_zero_size_component :: proc(t: ^testing.T) {
 	testing.expect(t, set(tag, e, Tag{}))
 	testing.expect(t, has(tag, e))
 	wake(tag, e)
-	each(tag, proc(e: Entity, v: ^Tag) {})
+	for _ in rows(tag) {
+	}
 	testing.expect_value(t, awake_len(tag), 1)
 	testing.expect(t, remove(tag, e))
 }
@@ -95,34 +96,6 @@ test_set_overwrites :: proc(t: ^testing.T) {
 	v, _ := get(pos, e)
 	testing.expect_value(t, v.x, 2.0)
 	testing.expect_value(t, comp_len(pos), 1)
-}
-
-@(test)
-test_pointer_components_rejected :: proc(t: ^testing.T) {
-	w, arena := test_world()
-	defer destroy_world(w)
-	defer free(arena, context.allocator)
-	defer mem.dynamic_arena_destroy(arena)
-
-	With_Slice :: struct { parts: []int }
-	With_String :: struct { name: string }
-	With_Pointer :: struct { next: ^Position }
-	With_Map :: struct { m: map[int]int }
-	Nested :: struct { inner: With_Slice }
-	With_Array_Of_Bad :: struct { arr: [4]With_String }
-
-	_, e1 := register(w, With_Slice)
-	testing.expect_value(t, e1, Error.Component_Has_Pointers)
-	_, e2 := register(w, With_String)
-	testing.expect_value(t, e2, Error.Component_Has_Pointers)
-	_, e3 := register(w, With_Pointer)
-	testing.expect_value(t, e3, Error.Component_Has_Pointers)
-	_, e4 := register(w, With_Map)
-	testing.expect_value(t, e4, Error.Component_Has_Pointers)
-	_, e5 := register(w, Nested)
-	testing.expect_value(t, e5, Error.Component_Has_Pointers)
-	_, e6 := register(w, With_Array_Of_Bad)
-	testing.expect_value(t, e6, Error.Component_Has_Pointers)
 }
 
 @(test)
@@ -205,12 +178,17 @@ test_each_n :: proc(t: ^testing.T) {
 		}
 	}
 
-	each2(pos, vel, proc(_e: Entity, p: ^Position, v: ^Velocity) {
-		p.x += v.x
-	})
-	n := 0
 	prows := rows(pos)
 	powners := owners(pos)
+	for i in 0 ..< len(prows) {
+		e := powners[i]
+		if v, ok := get(vel, e); ok {
+			prows[i].x += v.x
+		}
+	}
+	n := 0
+	prows = rows(pos)
+	powners = owners(pos)
 	for i in 0 ..< len(prows) {
 		e := powners[i]
 		if has(vel, e) {

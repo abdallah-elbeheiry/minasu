@@ -24,9 +24,10 @@ main :: proc() {
 	e := ecs.create(w)
 	ecs.set(pos, e, Pos{x = 1, y = 2})
 	ecs.wake(pos, e)
-	ecs.each(pos, proc(e: ecs.Entity, p: ^Pos) {
+	for i in 0 ..< len(ecs.rows(pos)) {
+		p := &ecs.rows(pos)[i]
 		p.x += 1
-	})
+	}
 	if v, ok := ecs.get(pos, e); ok {
 		logx.info("ecs", "pos", v.x, v.y)
 	}
