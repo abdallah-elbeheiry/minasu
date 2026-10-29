@@ -111,7 +111,7 @@ update :: proc(dt: f32) {
 		}
 	}
 	for i := len(g_pipes) - 1; i >= 0; i -= 1 {
-		if g_pipes[i].x + PIPE_W / 2 < -PIPE_W {
+		if g_pipes[i].x + PIPE_W / 2 < 0 {
 			last := len(g_pipes) - 1
 			g_pipes[i] = g_pipes[last]
 			pop(&g_pipes)
