@@ -4,10 +4,12 @@ import "core:mem"
 import "aqwabor:logx"
 import "aqwabor:window"
 import "aqwabor:image"
-import SDL "vendor:sdl3"
 
 main_arena: mem.Dynamic_Arena
 main_allocator: mem.Allocator
+
+g_win: window.Window
+g_texture: image.Texture
 
 main :: proc() {
 	mem.dynamic_arena_init(&main_arena)
@@ -28,34 +30,22 @@ main :: proc() {
 		return
 	}
 	defer window.Close(win)
+	g_win = win
 
-	renderer := window.Renderer(win)
-	if renderer == nil {
-		logx.errorf("renderer: failed")
-		return
-	}
-
-	texture := image.load_texture(renderer, "resources/new pfp.png")
-	if texture == nil {
+	g_texture = image.load_texture(win, "resources/new pfp.png")
+	if g_texture == nil {
 		logx.errorf("image: failed to load")
 		return
 	}
-	defer SDL.DestroyTexture(texture)
+	defer image.destroy(g_texture)
 
 	logx.info("windowdemo: window created")
 
-	running := true
-	for running {
-		event := SDL.Event{}
-		for SDL.PollEvent(&event) {
-			if event.type == SDL.EventType.QUIT {
-				running = false
-			}
-		}
-		SDL.SetRenderDrawColor(renderer, 20, 24, 36, 255)
-		SDL.RenderClear(renderer)
-		SDL.RenderTexture(renderer, texture, nil, nil)
-		SDL.RenderPresent(renderer)
-	}
+	window.Run(win,
+		proc() {
+			image.draw(g_win, g_texture)
+		},
+		proc(dt: f64) {},
+	)
 	logx.info("windowdemo: done")
 }

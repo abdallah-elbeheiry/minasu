@@ -13,13 +13,15 @@ WindowConfig :: struct {
 	OnDemand:  bool,
 }
 
-Window :: struct {
+window_data :: struct {
 	window:    ^SDL.Window,
 	renderer:  ^SDL.Renderer,
 	cfg:       WindowConfig,
 	mu:        sync.Mutex,
 	last_scale: f32,
 }
+
+Window :: ^window_data
 
 g_log: ^logx.Logger
 g_allocator: mem.Allocator
@@ -31,7 +33,7 @@ init :: proc() {
 	g_log = logx.with(g_allocator)
 }
 
-NewWindow :: proc(cfg: WindowConfig) -> (^Window, string) {
+NewWindow :: proc(cfg: WindowConfig) -> (Window, string) {
 	_cfg := cfg
 	if _cfg.W <= 0 || _cfg.H <= 0 {
 		logx.logger_warn(g_log, "invalid size, falling back to default", "w", _cfg.W, "h", _cfg.H)
@@ -56,7 +58,7 @@ NewWindow :: proc(cfg: WindowConfig) -> (^Window, string) {
 		SDL.RestoreWindow(w)
 		SDL.SyncWindow(w)
 		logx.logger_info(g_log, "window created", "title", _cfg.Title, "w", _cfg.W, "h", _cfg.H, "resizable", _cfg.Resizable, "onDemand", _cfg.OnDemand)
-		out := new(Window)
+		out := new(window_data)
 		out.window = w
 		out.cfg = _cfg
 		out.last_scale = 0
@@ -66,7 +68,7 @@ NewWindow :: proc(cfg: WindowConfig) -> (^Window, string) {
 	return nil, "failed to init SDL video"
 }
 
-Size :: proc(w: ^Window) -> (width: int, height: int) {
+Size :: proc(w: Window) -> (width: int, height: int) {
 	if w.window == nil {
 		return w.cfg.W, w.cfg.H
 	}
@@ -76,19 +78,19 @@ Size :: proc(w: ^Window) -> (width: int, height: int) {
 	return int(ww), int(hh)
 }
 
-ScaleFactor :: proc(w: ^Window) -> f32 {
+ScaleFactor :: proc(w: Window) -> f32 {
 	if w.window == nil {
 		return 1
 	}
 	return SDL.GetWindowDisplayScale(w.window)
 }
 
-OnResize :: proc(w: ^Window, fn: proc(width, height: int)) {
+OnResize :: proc(w: Window, fn: proc(width, height: int)) {
 	_ = w
 	_ = fn
 }
 
-Run :: proc(w: ^Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
+Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
 	if w.window == nil {
 		return ""
 	}
@@ -130,7 +132,7 @@ Run :: proc(w: ^Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
 	return ""
 }
 
-watch_scale :: proc(w: ^Window, scale: f32) {
+watch_scale :: proc(w: Window, scale: f32) {
 	sync.mutex_lock(&w.mu)
 	defer sync.mutex_unlock(&w.mu)
 	if w.last_scale == 0 {
@@ -144,7 +146,7 @@ watch_scale :: proc(w: ^Window, scale: f32) {
 	w.last_scale = scale
 }
 
-RequestRedraw :: proc(w: ^Window) {
+RequestRedraw :: proc(w: Window) {
 	_ = w
 }
 
@@ -160,14 +162,14 @@ cstring_from_string :: proc(s: string) -> cstring {
 	return cast(cstring) &buf[0]
 }
 
-Renderer :: proc(w: ^Window) -> ^SDL.Renderer {
+Renderer :: proc(w: Window) -> rawptr {
 	if w == nil {
 		return nil
 	}
-	return w.renderer
+	return rawptr(w.renderer)
 }
 
-Close :: proc(w: ^Window) {
+Close :: proc(w: Window) {
 	if w == nil || w.window == nil {
 		if w != nil && w.renderer != nil {
 			SDL.DestroyRenderer(w.renderer)

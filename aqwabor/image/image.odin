@@ -4,10 +4,18 @@ import "core:mem"
 import "core:c"
 import "core:strings"
 import "aqwabor:logx"
+import "aqwabor:window"
 import SDL "vendor:sdl3"
 import stbi "vendor:stb/image"
 
-load_texture :: proc(renderer: ^SDL.Renderer, path: string, allocator := context.allocator) -> ^SDL.Texture {
+Texture :: distinct rawptr
+
+load_texture :: proc(win: window.Window, path: string, allocator := context.allocator) -> Texture {
+	renderer := (^SDL.Renderer)(window.Renderer(win))
+	if renderer == nil {
+		return nil
+	}
+
 	cpath := strings.clone_to_cstring(path, allocator)
 	defer delete(cpath, allocator)
 
@@ -25,5 +33,21 @@ load_texture :: proc(renderer: ^SDL.Renderer, path: string, allocator := context
 	}
 	defer SDL.DestroySurface(surface)
 
-	return SDL.CreateTextureFromSurface(renderer, surface)
+	tex := SDL.CreateTextureFromSurface(renderer, surface)
+	return Texture(tex)
+}
+
+draw :: proc(win: window.Window, tex: Texture) {
+	renderer := (^SDL.Renderer)(window.Renderer(win))
+	if renderer == nil || tex == nil {
+		return
+	}
+	SDL.RenderTexture(renderer, (^SDL.Texture)(tex), nil, nil)
+}
+
+destroy :: proc(tex: Texture) {
+	if tex == nil {
+		return
+	}
+	SDL.DestroyTexture((^SDL.Texture)(tex))
 }
