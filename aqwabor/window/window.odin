@@ -14,9 +14,10 @@ WindowConfig :: struct {
 }
 
 Window :: struct {
-	window:   ^SDL.Window,
-	cfg:      WindowConfig,
-	mu:       sync.Mutex,
+	window:    ^SDL.Window,
+	renderer:  ^SDL.Renderer,
+	cfg:       WindowConfig,
+	mu:        sync.Mutex,
 	last_scale: f32,
 }
 
@@ -49,12 +50,17 @@ NewWindow :: proc(cfg: WindowConfig) -> (^Window, string) {
 		if _cfg.Resizable {
 			SDL.SetWindowResizable(w, true)
 		}
+		SDL.SetWindowPosition(w, 100, 100)
 		SDL.ShowWindow(w)
+		SDL.RaiseWindow(w)
+		SDL.RestoreWindow(w)
+		SDL.SyncWindow(w)
 		logx.logger_info(g_log, "window created", "title", _cfg.Title, "w", _cfg.W, "h", _cfg.H, "resizable", _cfg.Resizable, "onDemand", _cfg.OnDemand)
 		out := new(Window)
 		out.window = w
 		out.cfg = _cfg
 		out.last_scale = 0
+		out.renderer = SDL.CreateRenderer(w, nil)
 		return out, ""
 	}
 	return nil, "failed to init SDL video"
@@ -109,7 +115,16 @@ Run :: proc(w: ^Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
 		if onUpdate != nil {
 			onUpdate(dt)
 		}
-		onDraw()
+		if w.renderer != nil {
+			SDL.SetRenderDrawColor(w.renderer, 20, 24, 36, 255)
+			SDL.RenderClear(w.renderer)
+		}
+		if onDraw != nil {
+			onDraw()
+		}
+		if w.renderer != nil {
+			SDL.RenderPresent(w.renderer)
+		}
 	}
 	SDL.Quit()
 	return ""
@@ -145,9 +160,24 @@ cstring_from_string :: proc(s: string) -> cstring {
 	return cast(cstring) &buf[0]
 }
 
+Renderer :: proc(w: ^Window) -> ^SDL.Renderer {
+	if w == nil {
+		return nil
+	}
+	return w.renderer
+}
+
 Close :: proc(w: ^Window) {
-	if w.window == nil {
+	if w == nil || w.window == nil {
+		if w != nil && w.renderer != nil {
+			SDL.DestroyRenderer(w.renderer)
+			w.renderer = nil
+		}
 		return
+	}
+	if w.renderer != nil {
+		SDL.DestroyRenderer(w.renderer)
+		w.renderer = nil
 	}
 	logx.logger_debug(g_log, "window closed")
 	SDL.DestroyWindow(w.window)
