@@ -2,16 +2,21 @@ package ecs
 
 import "base:runtime"
 
+@(private)
 HORIZON_BITS :: 12
+@(private)
 HORIZON_SIZE :: 1 << HORIZON_BITS
+@(private)
 HORIZON_MASK :: HORIZON_SIZE - 1
 
+@(private)
 Timer_State :: enum i8 {
 	None,
 	Ring,
 	Far,
 }
 
+@(private)
 Timer_Slot :: struct {
 	owner: Entity,
 	tick:  u64,

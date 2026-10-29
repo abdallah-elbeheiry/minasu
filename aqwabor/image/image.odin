@@ -104,6 +104,17 @@ draw :: proc(win: window.Window, tex: Texture, scale: f32 = 1.0) {
 	if win == nil || tex.handle == nil {
 		return
 	}
+	sw, sh := window.SwapchainSize(win)
+	if sw <= 0 || sh <= 0 {
+		return
+	}
+	draw_at(win, tex, f32(sw)/2, f32(sh)/2, scale)
+}
+
+draw_at :: proc(win: window.Window, tex: Texture, x, y: f32, scale: f32 = 1.0, flip: SDL.FlipMode = .NONE) {
+	if win == nil || tex.handle == nil {
+		return
+	}
 	cmd := window.CurrentCommandBuffer(win)
 	swap := window.CurrentSwapchainTexture(win)
 	if cmd == nil || swap == nil {
@@ -113,13 +124,12 @@ draw :: proc(win: window.Window, tex: Texture, scale: f32 = 1.0) {
 	if sw <= 0 || sh <= 0 {
 		return
 	}
-	half := f32(128) * scale
-	cx := f32(sw) / 2
-	cy := f32(sh) / 2
-	dst_w := cast(u32)(256 * scale)
-	dst_h := cast(u32)(256 * scale)
-	dst_x := cast(u32)(cx - half)
-	dst_y := cast(u32)(cy - half)
+	half_w := f32(tex.w) * scale / 2
+	half_h := f32(tex.h) * scale / 2
+	dst_w := cast(u32)(f32(tex.w) * scale)
+	dst_h := cast(u32)(f32(tex.h) * scale)
+	dst_x := cast(u32)(x - half_w)
+	dst_y := cast(u32)(y - half_h)
 
 	blit := SDL.GPUBlitInfo{
 		source = SDL.GPUBlitRegion{
@@ -136,6 +146,51 @@ draw :: proc(win: window.Window, tex: Texture, scale: f32 = 1.0) {
 		},
 		load_op = .LOAD,
 		filter = .LINEAR,
+		flip_mode = flip,
+	}
+	SDL.BlitGPUTexture(cmd, blit)
+}
+
+// draw_rect draws tex centered at (cx, cy) stretched to exactly (w, h) in
+// window pixels, allowing non-uniform scaling (unlike draw_at).
+draw_rect :: proc(win: window.Window, tex: Texture, cx, cy, w, h: f32, flip: SDL.FlipMode = .NONE) {
+	if win == nil || tex.handle == nil {
+		return
+	}
+	cmd := window.CurrentCommandBuffer(win)
+	swap := window.CurrentSwapchainTexture(win)
+	if cmd == nil || swap == nil {
+		return
+	}
+	sw, sh := window.SwapchainSize(win)
+	if sw <= 0 || sh <= 0 {
+		return
+	}
+	dst_w := cast(u32)(w)
+	dst_h := cast(u32)(h)
+	dx := cx - w / 2
+	dy := cy - h / 2
+	if dx < 0 { dx = 0 }
+	if dy < 0 { dy = 0 }
+	dst_x := cast(u32)(dx)
+	dst_y := cast(u32)(dy)
+
+	blit := SDL.GPUBlitInfo{
+		source = SDL.GPUBlitRegion{
+			texture = tex.handle,
+			w = SDL.Uint32(tex.w),
+			h = SDL.Uint32(tex.h),
+		},
+		destination = SDL.GPUBlitRegion{
+			texture = swap,
+			w = dst_w,
+			h = dst_h,
+			x = dst_x,
+			y = dst_y,
+		},
+		load_op = .LOAD,
+		filter = .LINEAR,
+		flip_mode = flip,
 	}
 	SDL.BlitGPUTexture(cmd, blit)
 }

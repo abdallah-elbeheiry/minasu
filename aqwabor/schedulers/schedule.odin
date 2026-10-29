@@ -219,6 +219,7 @@ build_schedule :: proc(s: ^Schedule) {
 	}
 }
 
+@(private)
 stages :: proc(s: ^Schedule, allocator := context.allocator) -> [][]string {
 	sync.mutex_lock(&s.mu)
 	defer sync.mutex_unlock(&s.mu)
@@ -306,6 +307,7 @@ run_system :: proc(sys: ^Sys_Entry, state: Tick_State) {
 	}
 }
 
+@(private)
 conflicts :: proc(s: ^Schedule, allocator := context.allocator) -> []string {
 	sync.mutex_lock(&s.mu)
 	defer sync.mutex_unlock(&s.mu)

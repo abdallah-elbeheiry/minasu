@@ -9,8 +9,10 @@ import "base:runtime"
 // The dense array is partitioned. Rows before awake are the entities a system
 // iterates by default; rows from awake onward exist but are not visited.
 
+@(private)
 NO_ROW :: i32(-1)
 
+@(private)
 Store :: struct($T: typeid) {
 	cid:        Component_ID,
 	world:      ^World,
@@ -21,6 +23,7 @@ Store :: struct($T: typeid) {
 	awake:      int,
 }
 
+@(private)
 Any_Store :: struct {
 	impl:          rawptr,
 	cid:           Component_ID,
