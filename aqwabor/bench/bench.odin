@@ -9,13 +9,8 @@ import "aqwabor:schedulers"
 main :: proc() {
 	// ECS benchmark
 	{
-		arena: mem.Dynamic_Arena
-		mem.dynamic_arena_init(&arena)
-		defer mem.dynamic_arena_destroy(&arena)
-		backing := mem.dynamic_arena_allocator(&arena)
-
 		ta: mem.Tracking_Allocator
-		mem.tracking_allocator_init(&ta, backing)
+		mem.tracking_allocator_init(&ta, context.allocator)
 		defer mem.tracking_allocator_destroy(&ta)
 		alloc := mem.tracking_allocator(&ta)
 
@@ -45,6 +40,7 @@ main :: proc() {
 		ecs.reset(w)
 		reset_dur := time.since(start)
 
+		ecs.destroy_world(w)
 		fmt.printf("ECS create+wake %d: %v\n", n, create_dur)
 		fmt.printf("ECS iterate %d: %v\n", n, iter_dur)
 		fmt.printf("ECS reset: %v\n", reset_dur)
@@ -54,13 +50,8 @@ main :: proc() {
 
 	// Scheduler benchmark
 	{
-		arena: mem.Dynamic_Arena
-		mem.dynamic_arena_init(&arena)
-		defer mem.dynamic_arena_destroy(&arena)
-		backing := mem.dynamic_arena_allocator(&arena)
-
 		ta: mem.Tracking_Allocator
-		mem.tracking_allocator_init(&ta, backing)
+		mem.tracking_allocator_init(&ta, context.allocator)
 		defer mem.tracking_allocator_destroy(&ta)
 		alloc := mem.tracking_allocator(&ta)
 
@@ -80,6 +71,7 @@ main :: proc() {
 		}
 		run100_dur := time.since(start)
 
+		schedulers.destroy_schedule(s)
 		fmt.printf("Scheduler run 8 systems: %v\n", run_dur)
 		fmt.printf("Scheduler run x100: %v\n", run100_dur)
 		fmt.printf("Scheduler memory: allocated=%d freed=%d peak=%d allocs=%d leaks=%d\n",

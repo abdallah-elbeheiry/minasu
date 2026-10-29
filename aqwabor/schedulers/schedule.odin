@@ -162,10 +162,14 @@ set_barrier :: proc(s: ^Schedule, fn: proc()) {
 	sync.mutex_unlock(&s.mu)
 }
 
-add :: proc(s: ^Schedule, name: string, access: Access, fn: proc(Tick_State), allocator := context.allocator) {
+add :: proc(s: ^Schedule, name: string, access: Access, fn: proc(Tick_State), allocator: mem.Allocator = {}) {
 	sync.mutex_lock(&s.mu)
 	defer sync.mutex_unlock(&s.mu)
-	sys := new(Sys_Entry, allocator)
+	alloc := allocator
+	if alloc == (mem.Allocator{}) {
+		alloc = s.allocator
+	}
+	sys := new(Sys_Entry, alloc)
 	sys.name = name
 	sys.access = access
 	sys.fn = fn
