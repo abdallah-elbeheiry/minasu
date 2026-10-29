@@ -6,6 +6,7 @@
     "demo:window": "odin run aqwabor/examples/windowdemo -collection:aqwabor=aqwabor",
     "build": "odin build aqwabor -collection:aqwabor=aqwabor -out:/tmp/aqwabor",
     "test": "odin test aqwabor/ecs -collection:aqwabor=aqwabor",
-    "clean": "rm -f aqwabor aqwabor.bin /tmp/aqwabor /tmp/windowdemo /tmp/renderdemo"
+    "clean": "rm -f aqwabor aqwabor.bin /tmp/aqwabor /tmp/windowdemo /tmp/renderdemo",
+    "bench":"odin run aqwabor/bench -collection:aqwabor=aqwabor -o:speed"
   }
 }
