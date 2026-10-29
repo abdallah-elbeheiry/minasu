@@ -7,9 +7,12 @@ package ecs
 // is NO_ENTITY, which is every bit set.
 Entity :: distinct u64
 
+@(private)
 ENTITY_INDEX_MASK :: u64(0xFFFFFFFF)
+@(private)
 ENTITY_GENERATION_SHIFT :: 32
 
+@(private)
 NO_ENTITY :: Entity(max(u64))
 
 @(private)

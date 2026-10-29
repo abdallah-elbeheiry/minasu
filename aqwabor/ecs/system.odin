@@ -2,11 +2,13 @@ package ecs
 
 import "aqwabor:logx"
 
+@(private)
 System_Entry :: struct {
 	ptr: rawptr,
 	tid: typeid,
 }
 
+@(private)
 System_Manager :: struct {
 	systems: [dynamic]System_Entry,
 	by_type: map[typeid]int,

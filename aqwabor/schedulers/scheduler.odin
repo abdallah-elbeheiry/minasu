@@ -288,12 +288,15 @@ dispose :: proc(s: ^Scheduler) {
 	s.job_order = nil
 }
 
+@(private)
 job_pause :: proc(h: Job) {
 	if h.j != nil { h.j.paused = true }
 }
+@(private)
 job_resume :: proc(h: Job) {
 	if h.j != nil { h.j.paused = false }
 }
+@(private)
 job_stop :: proc(h: Job) {
 	if h.j == nil || h.s == nil {
 		return
@@ -311,6 +314,7 @@ job_stop :: proc(h: Job) {
 	rebuild_order(h.s)
 	free(h.j)
 }
+@(private)
 job_tick :: proc(h: Job) -> u64 {
 	if h.j == nil { return 0 }
 	return h.j.tick
