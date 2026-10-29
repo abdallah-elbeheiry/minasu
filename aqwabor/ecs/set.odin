@@ -9,12 +9,16 @@ Set :: struct {
 	sparse:     [dynamic]i32,
 }
 
-new_set :: proc(w: ^World, allocator := context.allocator) -> ^Set {
-	s := new(Set, allocator)
+new_set :: proc(w: ^World, allocator: runtime.Allocator = {}) -> ^Set {
+	alloc := allocator
+	if alloc == (runtime.Allocator{}) {
+		alloc = w.allocator
+	}
+	s := new(Set, alloc)
 	s.world = w
-	s.allocator = allocator
-	s.dense = make([dynamic]Entity, 0, 64, allocator)
-	s.sparse = make([dynamic]i32, 0, 64, allocator)
+	s.allocator = alloc
+	s.dense = make([dynamic]Entity, 0, 64, alloc)
+	s.sparse = make([dynamic]i32, 0, 64, alloc)
 	append(&w.sets, s)
 	return s
 }

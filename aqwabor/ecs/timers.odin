@@ -1,5 +1,7 @@
 package ecs
 
+import "base:runtime"
+
 HORIZON_BITS :: 12
 HORIZON_SIZE :: 1 << HORIZON_BITS
 HORIZON_MASK :: HORIZON_SIZE - 1
@@ -18,19 +20,24 @@ Timer_Slot :: struct {
 }
 
 Timers :: struct {
-	now:   u64,
-	ring:  [HORIZON_SIZE][dynamic]Entity,
-	far:   map[u64][dynamic]Entity,
-	slots: [dynamic]Timer_Slot,
+	now:       u64,
+	allocator:  runtime.Allocator,
+	ring:      [HORIZON_SIZE][dynamic]Entity,
+	far:       map[u64][dynamic]Entity,
+	slots:     [dynamic]Timer_Slot,
 }
 
-@(private)
-timers_init :: proc(t: ^Timers, allocator := context.allocator) {
+timers_init :: proc(t: ^Timers, allocator: runtime.Allocator = {}) {
+	alloc := allocator
+	if alloc == (runtime.Allocator{}) {
+		alloc = context.allocator
+	}
 	t.now = 0
-	t.far = make(map[u64][dynamic]Entity, allocator)
-	t.slots = make([dynamic]Timer_Slot, 0, 256, allocator)
+	t.allocator = alloc
+	t.far = make(map[u64][dynamic]Entity, alloc)
+	t.slots = make([dynamic]Timer_Slot, 0, 256, alloc)
 	for i in 0 ..< HORIZON_SIZE {
-		t.ring[i] = make([dynamic]Entity, 0, 4, allocator)
+		t.ring[i] = make([dynamic]Entity, 0, 4, alloc)
 	}
 }
 
@@ -86,7 +93,7 @@ timers_at :: proc(t: ^Timers, e: Entity, tick: u64) {
 	}
 	bucket, ok := t.far[tick]
 	if !ok {
-		bucket = make([dynamic]Entity, 0, 4)
+		bucket = make([dynamic]Entity, 0, 4, t.allocator)
 	}
 	append(&bucket, e)
 	t.far[tick] = bucket

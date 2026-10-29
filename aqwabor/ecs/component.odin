@@ -103,45 +103,12 @@ Component_Registry :: struct {
 	types:   [dynamic]typeid,
 }
 
-@(private)
-type_info_has_pointers :: proc(info: ^runtime.Type_Info) -> bool {
-	if info == nil {
-		return false
-	}
-	#partial switch v in info.variant {
-	case runtime.Type_Info_Named:
-		return type_info_has_pointers(v.base)
-	case runtime.Type_Info_Pointer,
-	     runtime.Type_Info_Multi_Pointer,
-	     runtime.Type_Info_Slice,
-	     runtime.Type_Info_Dynamic_Array,
-	     runtime.Type_Info_Map,
-	     runtime.Type_Info_String,
-	     runtime.Type_Info_Procedure,
-	     runtime.Type_Info_Any,
-	     runtime.Type_Info_Union,
-	     runtime.Type_Info_Soa_Pointer:
-		return true
-	case runtime.Type_Info_Struct:
-		for i in 0 ..< v.field_count {
-			if type_info_has_pointers(v.types[i]) {
-				return true
-			}
-		}
-		return false
-	case runtime.Type_Info_Array:
-		return type_info_has_pointers(v.elem)
-	case runtime.Type_Info_Enumerated_Array:
-		return type_info_has_pointers(v.elem)
-	}
-	return false
-}
 
-component_has_pointers :: proc($T: typeid) -> bool {
-	return type_info_has_pointers(type_info_of(T))
-}
-
-register :: proc(w: ^World, $T: typeid, allocator := context.allocator) -> (Comp(T), Error) {
+register :: proc(w: ^World, $T: typeid, allocator: runtime.Allocator = {}) -> (Comp(T), Error) {
+	alloc := allocator
+	if alloc == (runtime.Allocator{}) {
+		alloc = w.allocator
+	}
 	tid := typeid_of(T)
 	info := type_info_of(T)
 	if info == nil {
@@ -150,9 +117,6 @@ register :: proc(w: ^World, $T: typeid, allocator := context.allocator) -> (Comp
 	if _, is_any := info.variant.(runtime.Type_Info_Any); is_any {
 		return {}, .Component_Not_Concrete
 	}
-	if component_has_pointers(T) {
-		return {}, .Component_Has_Pointers
-	}
 
 	if existing, ok := w.registry.by_type[tid]; ok {
 		s := (^Store(T))(w.stores[existing].impl)
@@ -160,8 +124,8 @@ register :: proc(w: ^World, $T: typeid, allocator := context.allocator) -> (Comp
 	}
 
 	id := Component_ID(len(w.stores))
-	s := new(Store(T), allocator)
-	store_init(s, w, id, allocator)
+	s := new(Store(T), alloc)
+	store_init(s, w, id, alloc)
 	w.registry.by_type[tid] = id
 	append(&w.registry.types, tid)
 	append(&w.stores, make_any_store(s))
@@ -172,8 +136,12 @@ register :: proc(w: ^World, $T: typeid, allocator := context.allocator) -> (Comp
 	return Comp(T){id = id, s = s}, .None
 }
 
-must_register :: proc(w: ^World, $T: typeid, allocator := context.allocator) -> Comp(T) {
-	c, err := register(w, T, allocator)
+must_register :: proc(w: ^World, $T: typeid, allocator: runtime.Allocator = {}) -> Comp(T) {
+	alloc := allocator
+	if alloc == (runtime.Allocator{}) {
+		alloc = w.allocator
+	}
+	c, err := register(w, T, alloc)
 	if err != .None {
 		panic(error_string(err))
 	}
