@@ -37,12 +37,17 @@ load_texture :: proc(win: window.Window, path: string, allocator := context.allo
 	return Texture(tex)
 }
 
-draw :: proc(win: window.Window, tex: Texture) {
+draw :: proc(win: window.Window, tex: Texture, scale: f32 = 1.0) {
 	renderer := (^SDL.Renderer)(window.Renderer(win))
 	if renderer == nil || tex == nil {
 		return
 	}
-	SDL.RenderTexture(renderer, (^SDL.Texture)(tex), nil, nil)
+	ww, wh := window.Size(win)
+	cx := f32(ww) / 2
+	cy := f32(wh) / 2
+	half := 128 * scale
+	dst := SDL.FRect{x = cx - half, y = cy - half, w = 256 * scale, h = 256 * scale}
+	SDL.RenderTexture(renderer, (^SDL.Texture)(tex), nil, &dst)
 }
 
 destroy :: proc(tex: Texture) {

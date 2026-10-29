@@ -99,7 +99,7 @@ defaultTapMax :: f64
 Manager :: struct {
 	backend: Backend,
 
-	actions: []^Action,
+	actions: [dynamic]^Action,
 	byName:  map[string]^Action,
 
 	clock: f64,
@@ -112,16 +112,15 @@ Manager :: struct {
 	ctx: Context,
 
 	recording: bool,
-	events:    []ActionEvent,
+	events:    [dynamic]ActionEvent,
 }
 
 // NewManager creates a Manager fed by the given Backend.
 NewManager :: proc(backend: Backend) -> ^Manager {
-	m := &Manager{
-		backend = backend,
-	byName  = make(map[string]^Action),
-	keysDown = make(map[Key]bool),
-	}
+	m := new(Manager, context.allocator)
+	m.backend = backend
+	m.byName = make(map[string]^Action, context.allocator)
+	m.keysDown = make(map[Key]bool, context.allocator)
 	m.ctx.mgr = m
 	logx.logger_debug(g_log, "input manager created")
 	return m
@@ -132,10 +131,11 @@ ActionMgr :: proc(m: ^Manager, name: string) -> ^Action {
 	if a, ok := m.byName[name]; ok {
 		return a
 	}
-	a := &Action{name = name, mgr = m, enabled = true}
-	acts := m.actions
-	append_slice_action(&acts, a)
-	m.actions = acts
+	a := new(Action, context.allocator)
+	a.name = name
+	a.mgr = m
+	a.enabled = true
+	append(&m.actions, a)
 	m.byName[name] = a
 	return a
 }
@@ -143,17 +143,13 @@ ActionMgr :: proc(m: ^Manager, name: string) -> ^Action {
 // BindKey adds a keyboard binding to an Action. Bindings accumulate; an
 // Action fires when any of its bindings is active.
 BindKey :: proc(m: ^Manager, a: ^Action, k: Key) {
-	bindings := a.bindings
-	append_slice_binding(&bindings, Binding{kind = .Key, key = k})
-	a.bindings = bindings
+	append(&a.bindings, Binding{kind = .Key, key = k})
 	logx.logger_debug(g_log, "bound key", "action", a.name, "key", k, "bindings", len(a.bindings))
 }
 
 // BindMouseButton adds a mouse button binding to an Action.
 BindMouseButton :: proc(m: ^Manager, a: ^Action, b: MouseButton) {
-	bindings := a.bindings
-	append_slice_binding(&bindings, Binding{kind = .Mouse, button = b})
-	a.bindings = bindings
+	append(&a.bindings, Binding{kind = .Mouse, button = b})
 	logx.logger_debug(g_log, "bound mouse button", "action", a.name, "button", b, "bindings", len(a.bindings))
 }
 
@@ -161,9 +157,7 @@ BindMouseButton :: proc(m: ^Manager, a: ^Action, b: MouseButton) {
 // given keys are held simultaneously.
 Combo :: proc(m: ^Manager, name: string, keys: ..Key) -> ^Action {
 	a := ActionMgr(m, name)
-	bindings: []Binding = a.bindings
-	append_slice_binding(&bindings, Binding{kind = .Combo, combo = keys})
-	a.bindings = bindings
+	append(&a.bindings, Binding{kind = .Combo, combo = keys})
 	logx.logger_debug(g_log, "bound combo", "action", name, "keys", keys)
 	return a
 }
@@ -197,7 +191,7 @@ SetRecording :: proc(m: ^Manager, on: bool) {
 
 // Drain returns and clears the derived events recorded since the last call.
 Drain :: proc(m: ^Manager) -> []ActionEvent {
-	e := m.events
+	e := m.events[:]
 	m.events = nil
 	return e
 }
@@ -207,9 +201,7 @@ record :: proc(m: ^Manager, t: ActionEventType, active: bool, dx: f64, dy: f64) 
 	if !m.recording {
 		return
 	}
-	evts := m.events
-	append_slice_event(&evts, ActionEvent{Type = t, Action = m.ctx.action, Now = m.clock, Dt = m.ctx.dt, Active = active, DX = dx, DY = dy})
-	m.events = evts
+	append(&m.events, ActionEvent{Type = t, Action = m.ctx.action, Now = m.clock, Dt = m.ctx.dt, Active = active, DX = dx, DY = dy})
 }
 
 // Update advances the simulation by dt seconds, pumps the Backend for new
@@ -270,9 +262,7 @@ applyEvent :: proc(m: ^Manager, ev: Event) {
 append_elems_event :: proc(slice: ^[]ActionEvent, elem: ActionEvent) {
 	tmp := slice^
 	new_slice := make([]ActionEvent, len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -280,9 +270,7 @@ append_elems_event :: proc(slice: ^[]ActionEvent, elem: ActionEvent) {
 append_slice_proc_ctx :: proc(slice: ^[]proc(Context), elem: proc(Context)) {
 	tmp := slice^
 	new_slice := make([]proc(Context), len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -290,9 +278,7 @@ append_slice_proc_ctx :: proc(slice: ^[]proc(Context), elem: proc(Context)) {
 append_slice_action :: proc(slice: ^[]^Action, elem: ^Action) {
 	tmp := slice^
 	new_slice := make([]^Action, len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -300,9 +286,7 @@ append_slice_action :: proc(slice: ^[]^Action, elem: ^Action) {
 append_slice_binding :: proc(slice: ^[]Binding, elem: Binding) {
 	tmp := slice^
 	new_slice := make([]Binding, len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -310,9 +294,7 @@ append_slice_binding :: proc(slice: ^[]Binding, elem: Binding) {
 append_slice_holdHandler :: proc(slice: ^[]holdHandler, elem: holdHandler) {
 	tmp := slice^
 	new_slice := make([]holdHandler, len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -320,9 +302,7 @@ append_slice_holdHandler :: proc(slice: ^[]holdHandler, elem: holdHandler) {
 append_slice_proc_bool_ctx :: proc(slice: ^[]proc(bool, Context), elem: proc(bool, Context)) {
 	tmp := slice^
 	new_slice := make([]proc(bool, Context), len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -330,9 +310,7 @@ append_slice_proc_bool_ctx :: proc(slice: ^[]proc(bool, Context), elem: proc(boo
 append_slice_proc_f64_f64_ctx :: proc(slice: ^[]proc(f64, f64, Context), elem: proc(f64, f64, Context)) {
 	tmp := slice^
 	new_slice := make([]proc(f64, f64, Context), len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }
@@ -340,9 +318,7 @@ append_slice_proc_f64_f64_ctx :: proc(slice: ^[]proc(f64, f64, Context), elem: p
 append_slice_event :: proc(slice: ^[]ActionEvent, elem: ActionEvent) {
 	tmp := slice^
 	new_slice := make([]ActionEvent, len(tmp) + 1)
-	for i in 0 ..< len(tmp) {
-		new_slice[i] = tmp[i]
-	}
+	copy(new_slice, tmp)
 	new_slice[len(tmp)] = elem
 	slice^ = new_slice
 }

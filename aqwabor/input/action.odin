@@ -66,14 +66,14 @@ Action :: struct {
 	mgr:      ^Manager,
 	enabled:  bool,
 
-	bindings: []Binding,
+	bindings: [dynamic]Binding,
 
-	onPress:   []proc(Context),
-	onRelease: []proc(Context),
-	onHold:    []holdHandler,
-	onTap:     []proc(Context),
-	onToggle:  []proc(bool, Context),
-	onDrag:    []proc(f64, f64, Context),
+	onPress:   [dynamic]proc(Context),
+	onRelease: [dynamic]proc(Context),
+	onHold:    [dynamic]holdHandler,
+	onTap:     [dynamic]proc(Context),
+	onToggle:  [dynamic]proc(bool, Context),
+	onDrag:    [dynamic]proc(f64, f64, Context),
 
 	// Live state.
 	down:       bool,
@@ -124,16 +124,12 @@ IsActive :: proc(a: ^Action) -> bool {
 
 // OnPressed registers a callback fired once on the press edge.
 OnPressed :: proc(a: ^Action, fn: proc(Context)) {
-	op := a.onPress
-	append_slice_proc_ctx(&op, fn)
-	a.onPress = op
+	append(&a.onPress, fn)
 }
 
 // OnReleased registers a callback fired once on the release edge.
 OnReleased :: proc(a: ^Action, fn: proc(Context)) {
-	or := a.onRelease
-	append_slice_proc_ctx(&or, fn)
-	a.onRelease = or
+	append(&a.onRelease, fn)
 }
 
 // OnHold registers a callback fired every frame the Action has been held
@@ -142,34 +138,26 @@ OnReleased :: proc(a: ^Action, fn: proc(Context)) {
 // callback fires every frame, scale accumulations by ctx.Dt() to stay
 // frame-rate independent.
 OnHold :: proc(a: ^Action, threshold: f64, fn: proc(Context)) {
-	oh := a.onHold
-	append_slice_holdHandler(&oh, holdHandler{threshold = threshold, fn = fn})
-	a.onHold = oh
+	append(&a.onHold, holdHandler{threshold = threshold, fn = fn})
 }
 
 // OnTap registers a callback fired on a quick press+release, where "quick"
 // means shorter than defaultTapMax (0.22s). The tap window is fixed and does
 // not depend on any OnHold threshold.
 OnTap :: proc(a: ^Action, fn: proc(Context)) {
-	ot := a.onTap
-	append_slice_proc_ctx(&ot, fn)
-	a.onTap = ot
+	append(&a.onTap, fn)
 }
 
 // OnToggle registers a callback fired on every press edge, carrying the new
 // toggle state (true after an odd number of presses).
 OnToggle :: proc(a: ^Action, fn: proc(bool, Context)) {
-	otg := a.onToggle
-	append_slice_proc_bool_ctx(&otg, fn)
-	a.onToggle = otg
+	append(&a.onToggle, fn)
 }
 
 // OnDrag registers a callback fired whenever the pointer moves while the
 // Action is held. dx, dy are the per-frame movement deltas.
 OnDrag :: proc(a: ^Action, fn: proc(f64, f64, Context)) {
-	od := a.onDrag
-	append_slice_proc_f64_f64_ctx(&od, fn)
-	a.onDrag = od
+	append(&a.onDrag, fn)
 }
 
 // process updates the Action's state from the live Manager state and

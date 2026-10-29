@@ -4,6 +4,7 @@ import "core:c"
 import "core:mem"
 import "core:sync"
 import "aqwabor:logx"
+import "aqwabor:input"
 import SDL "vendor:sdl3"
 
 WindowConfig :: struct {
@@ -14,14 +15,22 @@ WindowConfig :: struct {
 }
 
 window_data :: struct {
-	window:    ^SDL.Window,
-	renderer:  ^SDL.Renderer,
-	cfg:       WindowConfig,
-	mu:        sync.Mutex,
+	window:     ^SDL.Window,
+	renderer:   ^SDL.Renderer,
+	cfg:        WindowConfig,
+	mu:         sync.Mutex,
 	last_scale: f32,
+	inputQueue: [dynamic]input.Event,
 }
 
 Window :: ^window_data
+
+// PollInput drains and returns the input events collected since the last call.
+PollInput :: proc(w: Window) -> [dynamic]input.Event {
+	q := w.inputQueue
+	w.inputQueue = nil
+	return q
+}
 
 g_log: ^logx.Logger
 g_allocator: mem.Allocator
@@ -90,7 +99,7 @@ OnResize :: proc(w: Window, fn: proc(width, height: int)) {
 	_ = fn
 }
 
-Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
+Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64), onKey: proc(key: string) = nil, onKeyUp: proc(key: string) = nil) -> string {
 	if w.window == nil {
 		return ""
 	}
@@ -102,6 +111,20 @@ Run :: proc(w: Window, onDraw: proc(), onUpdate: proc(dt: f64)) -> string {
 		for SDL.PollEvent(&event) {
 			if event.type == SDL.EventType.QUIT {
 				running = false
+			}
+			if event.type == SDL.EventType.KEY_DOWN {
+				name := SDL.GetKeyName(event.key.key)
+				if name != nil && onKey != nil {
+					onKey(string(name))
+				}
+				append(&w.inputQueue, input.Event{Kind = .KeyDown, Key = sdl_key_to_input(event.key.key)})
+			}
+			if event.type == SDL.EventType.KEY_UP {
+				name := SDL.GetKeyName(event.key.key)
+				if name != nil && onKeyUp != nil {
+					onKeyUp(string(name))
+				}
+				append(&w.inputQueue, input.Event{Kind = .KeyUp, Key = sdl_key_to_input(event.key.key)})
 			}
 			if event.type == SDL.EventType.WINDOW_RESIZED {
 				logx.logger_debug(g_log, "window resized", "w", event.window.data1, "h", event.window.data2)
